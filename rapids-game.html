@@ -1,0 +1,1726 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="only light">
+<title>급류 타기! 보트 슬라이드</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&family=Black+Han+Sans&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: only light; }
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            box-sizing: border-box;
+        }
+        html {
+            position: fixed;
+            inset: 0;
+            overscroll-behavior: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            overscroll-behavior: none;
+            background-color: #38bdf8;
+            color: #fff;
+            font-family: 'Jua', sans-serif;
+            touch-action: none;
+        }
+        #game-canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            z-index: 1;
+        }
+        /* Roblox Cartoon Text Stroke */
+        .stroke-text {
+            text-shadow: 
+                -2px -2px 0 #000,  
+                 2px -2px 0 #000,
+                -2px  2px 0 #000,
+                 2px  2px 0 #000,
+                 0px  3px 0 #000;
+        }
+        .stroke-text-sm {
+            text-shadow: 
+                -1.5px -1.5px 0 #000,  
+                 1.5px -1.5px 0 #000,
+                -1.5px  1.5px 0 #000,
+                 1.5px  1.5px 0 #000;
+        }
+        .roblox-panel {
+            background: rgba(30, 41, 59, 0.85);
+            border: 3px solid #000;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.25);
+        }
+        .roblox-btn {
+            border: 3px solid #000;
+            box-shadow: 0 5px 0 #000, inset 0 3px 0 rgba(255,255,255,0.4);
+            transition: transform 0.08s ease, box-shadow 0.08s ease;
+        }
+        .roblox-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 1px 0 #000, inset 0 2px 0 rgba(255,255,255,0.3);
+        }
+        /* Speed lines overlay when surfing down */
+        #speed-lines {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            background: radial-gradient(circle, transparent 45%, rgba(255,255,255,0.35) 85%, rgba(255,255,255,0.85) 100%);
+        }
+        .speed-line-ray {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 150vmax;
+            height: 4px;
+            background: linear-gradient(90deg, transparent 35%, rgba(255,255,255,0.9) 80%, #fff 100%);
+            transform-origin: 0 50%;
+            animation: rayPulse 0.18s infinite alternate;
+        }
+        @keyframes rayPulse {
+            0% { opacity: 0.3; transform: rotate(var(--angle)) scaleX(0.85); }
+            100% { opacity: 0.95; transform: rotate(var(--angle)) scaleX(1.1); }
+        }
+        /* Floating coin popup */
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(0.8); opacity: 1; }
+            60% { transform: translateY(-50px) scale(1.1); opacity: 1; }
+            100% { transform: translateY(-90px) scale(0.95); opacity: 0; }
+        }
+        .coin-popup {
+            animation: floatUp 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        /* Custom Scrollbar for shop */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #fbbf24;
+            border-radius: 8px;
+            border: 2px solid #000;
+        }
+    </style>
+</head>
+<body>
+
+
+
+    <!-- 3D Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Surfing Speed Lines Effect (Screenshot 4 style) -->
+    <div id="speed-lines"></div>
+
+    <!-- Floating Reward Popups Container -->
+    <div id="popup-container" class="fixed inset-0 pointer-events-none z-30 overflow-hidden"></div>
+
+    <!-- ================= UI OVERLAY ================= -->
+    <div class="fixed inset-0 pointer-events-none z-20 flex flex-col justify-between p-2 sm:p-4">
+
+        <!-- TOP HUD BAR -->
+        <div class="flex items-start justify-between w-full">
+            <!-- Left: Roblox style Menu Icons + Sound Toggle -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+                <button id="btn-reset-pos" title="광장으로 귀환" class="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-slate-900/90 border-2 border-black flex items-center justify-center text-white shadow-md active:scale-90 transition">
+                    <!-- Roblox-like tilted square logo -->
+                    <div class="w-5 h-5 border-4 border-white transform rotate-12"></div>
+                </button>
+                <button id="btn-sound" class="px-3 h-10 sm:h-11 rounded-full bg-slate-900/90 border-2 border-black flex items-center gap-1.5 text-white text-sm shadow-md active:scale-95 transition">
+                    <span id="sound-icon">🔊</span>
+                    <span class="hidden sm:inline">효과음</span>
+                </button>
+            </div>
+
+            <!-- Center: Trophy & Coin Counters (Matching Screenshot) -->
+            <div class="flex items-center gap-2 sm:gap-4 pointer-events-auto">
+                <!-- Trophy Counter -->
+                <div class="relative flex items-center roblox-panel rounded-2xl px-3 sm:px-5 py-1 sm:py-1.5 min-w-[105px] sm:min-w-[140px] justify-end">
+                    <div class="absolute -left-3 sm:-left-4 w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center text-2xl sm:text-3xl filter drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]">
+                        🏆
+                    </div>
+                    <span id="ui-trophies" class="text-white text-lg sm:text-2xl stroke-text tracking-wider">0</span>
+                </div>
+
+                <!-- Coin Counter -->
+                <div class="relative flex items-center roblox-panel rounded-2xl px-3 sm:px-5 py-1 sm:py-1.5 min-w-[120px] sm:min-w-[165px] justify-end">
+                    <div class="absolute -left-3 sm:-left-4 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-gradient-to-b from-yellow-300 to-amber-500 border-3 border-black flex items-center justify-center text-lg sm:text-xl shadow-md">
+                        🪙
+                    </div>
+                    <span id="ui-coins" class="text-yellow-300 text-lg sm:text-2xl stroke-text tracking-wider">0</span>
+                </div>
+            </div>
+
+            <!-- Right: Share Button -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+                <button id="btn-share" class="roblox-btn bg-gradient-to-b from-cyan-400 to-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center gap-1.5 text-sm sm:text-base stroke-text-sm">
+                    <span>📤</span>
+                    <span>친구 공유</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- MIDDLE SECTION: Left Altitude Bar & Right Menu Grid -->
+        <div class="flex-1 flex items-center justify-between relative my-2">
+
+            <!-- LEFT VERTICAL ALTITUDE METER (0M ~ 50KM) -->
+            <div class="relative flex items-center h-[58vh] max-h-[420px] ml-1 sm:ml-2 pointer-events-auto">
+                <!-- Vertical Track -->
+                <div class="relative w-7 sm:w-9 h-full bg-gradient-to-b from-sky-300 via-cyan-200 to-sky-400 border-[3px] border-black rounded-full shadow-lg flex flex-col justify-between items-center py-4">
+                    <!-- Top Trophy Icon -->
+                    <div class="absolute -top-6 text-2xl sm:text-3xl filter drop-shadow-[0_2px_2px_rgba(0,0,0,1)]">🏆</div>
+
+                    <!-- Milestone Labels -->
+                    <div class="w-full border-b-2 border-black/40 text-center text-[10px] sm:text-xs text-white stroke-text-sm">50KM</div>
+                    <div class="w-full border-b-2 border-black/40 text-center text-[10px] sm:text-xs text-white stroke-text-sm">35KM</div>
+                    <div class="w-full border-b-2 border-black/40 text-center text-[10px] sm:text-xs text-white stroke-text-sm">20KM</div>
+                    <div class="w-full border-b-2 border-black/40 text-center text-[10px] sm:text-xs text-white stroke-text-sm">10KM</div>
+                    <div class="w-full text-center text-[10px] sm:text-xs text-white stroke-text-sm">0M</div>
+                </div>
+
+                <!-- Dynamic Markers Container (Player & Rival Bots) -->
+                <div id="altitude-markers" class="relative h-full w-24 sm:w-28 ml-1">
+                    <!-- Rival Bot 1: 레전드 (Top) -->
+                    <div class="absolute left-0 flex items-center gap-1 transition-all duration-300" style="bottom: 92%;">
+                        <div class="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-r-[7px] border-r-white"></div>
+                        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-purple-600 border-2 border-black flex items-center justify-center text-xs shadow">👑</div>
+                        <span class="text-[10px] sm:text-xs text-white stroke-text-sm whitespace-nowrap">레전드</span>
+                    </div>
+                    <!-- Rival Bot 2: 준호 -->
+                    <div id="bot-marker-2" class="absolute left-0 flex items-center gap-1 transition-all duration-500" style="bottom: 45%;">
+                        <div class="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-r-[7px] border-r-white"></div>
+                        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-orange-500 border-2 border-black flex items-center justify-center text-xs shadow">😎</div>
+                        <span class="text-[10px] sm:text-xs text-white stroke-text-sm whitespace-nowrap">준호</span>
+                    </div>
+                    <!-- Rival Bot 3: 민수 -->
+                    <div id="bot-marker-1" class="absolute left-0 flex items-center gap-1 transition-all duration-500" style="bottom: 18%;">
+                        <div class="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-r-[7px] border-r-white"></div>
+                        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-blue-500 border-2 border-black flex items-center justify-center text-xs shadow">🧢</div>
+                        <span class="text-[10px] sm:text-xs text-white stroke-text-sm whitespace-nowrap">민수</span>
+                    </div>
+
+                    <!-- Player Marker (당신) -->
+                    <div id="player-altitude-marker" class="absolute left-0 flex items-center gap-1 z-10 transition-all duration-75" style="bottom: 0%;">
+                        <div class="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-r-[9px] border-r-lime-400"></div>
+                        <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-lime-500 border-2 border-black flex items-center justify-center text-sm shadow-md">🚤</div>
+                        <div class="flex flex-col leading-none">
+                            <span class="text-xs sm:text-sm text-lime-300 stroke-text-sm whitespace-nowrap">당신</span>
+                            <span id="player-altitude-text" class="text-[10px] sm:text-xs text-white stroke-text-sm">0m</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CENTER FLOATING PENDING COINS DISPLAY (Visible when on Slide) -->
+            <div id="slide-earn-hud" class="hidden flex-col items-center justify-center pointer-events-none transform -translate-y-8">
+                <div class="text-yellow-200 text-lg sm:text-2xl stroke-text mb-1">획득한 아이템:</div>
+                <div class="flex items-center gap-2 bg-black/45 px-5 py-2 rounded-2xl border-2 border-yellow-400/80 backdrop-blur-sm">
+                    <span class="text-2xl sm:text-4xl">🪙</span>
+                    <span id="pending-coins-text" class="text-2xl sm:text-4xl text-white stroke-text">+0</span>
+                </div>
+                <div id="current-boat-bonus" class="text-xs sm:text-sm text-cyan-300 stroke-text-sm mt-1">보트 배율: x1.0</div>
+            </div>
+
+            <!-- RIGHT ACTION BUTTONS (Shop, Teleport to Slide, Upgrades) -->
+            <div class="flex flex-col gap-2.5 sm:gap-3 items-end pointer-events-auto mr-1 sm:mr-2">
+                <!-- Current Equipped Boat Badge -->
+                <div class="roblox-panel rounded-xl px-3 py-1.5 text-right hidden sm:block">
+                    <div class="text-[11px] text-amber-300 stroke-text-sm">현재 장착 보트</div>
+                    <div id="hud-boat-name" class="text-sm text-white stroke-text-sm">기본 노란 튜브</div>
+                </div>
+
+                <!-- Grid of 2x2 Yellow Roblox Style Buttons -->
+                <div class="grid grid-cols-2 gap-2 sm:gap-2.5">
+                    <!-- Shop Button -->
+                    <button id="btn-open-shop" class="roblox-btn w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-b from-yellow-300 via-amber-400 to-amber-500 rounded-2xl flex flex-col items-center justify-center relative">
+                        <span class="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full border-2 border-black stroke-text-sm animate-bounce">UP!</span>
+                        <span class="text-2xl sm:text-3xl filter drop-shadow">🏪</span>
+                        <span class="text-xs sm:text-sm text-white stroke-text-sm mt-0.5">보트 상점</span>
+                    </button>
+
+                    <!-- Quick Ride Button -->
+                    <button id="btn-quick-slide" class="roblox-btn w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-b from-sky-300 via-cyan-400 to-blue-500 rounded-2xl flex flex-col items-center justify-center">
+                        <span class="text-2xl sm:text-3xl filter drop-shadow">🌊</span>
+                        <span class="text-xs sm:text-sm text-white stroke-text-sm mt-0.5">급류 출발</span>
+                    </button>
+
+                    <!-- Index / Rank Info -->
+                    <button id="btn-open-rank" class="roblox-btn w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-b from-yellow-300 via-amber-400 to-amber-500 rounded-2xl flex flex-col items-center justify-center">
+                        <span class="text-2xl sm:text-3xl filter drop-shadow">📖</span>
+                        <span class="text-xs sm:text-sm text-white stroke-text-sm mt-0.5">보트 도감</span>
+                    </button>
+
+                    <!-- Free Daily/Click Bonus -->
+                    <button id="btn-free-gift" class="roblox-btn w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-b from-pink-400 via-rose-500 to-red-500 rounded-2xl flex flex-col items-center justify-center">
+                        <span class="text-2xl sm:text-3xl filter drop-shadow">🎁</span>
+                        <span id="gift-timer-text" class="text-xs sm:text-sm text-white stroke-text-sm mt-0.5">무료 선물</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- BOTTOM CONTROLS: Joystick + Slide Action Bar + Jump Button -->
+        <div class="relative w-full h-36 sm:h-40 flex items-end justify-between">
+
+            <!-- Bottom-Left: Virtual Joystick (Shown in Plaza) -->
+            <div id="joystick-zone" class="relative w-32 h-32 sm:w-36 sm:h-36 ml-2 mb-1 pointer-events-auto flex items-center justify-center">
+                <div id="joystick-base" class="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-slate-900/50 border-4 border-white/60 backdrop-blur-sm flex items-center justify-center shadow-inner">
+                    <div id="joystick-knob" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/90 border-2 border-slate-800 shadow-lg transition-transform duration-75"></div>
+                </div>
+                <div class="absolute -top-5 text-center w-full text-xs text-white/90 stroke-text-sm pointer-events-none">조이스틱 / WASD</div>
+            </div>
+
+            <!-- Bottom-Center: Slide Climbing & Surfing HUD (Matches Screenshot 3!) -->
+            <div id="slide-controls-hud" class="hidden flex-col items-center justify-end w-full max-w-lg mx-auto mb-1 px-2 pointer-events-auto z-20">
+                <!-- Progress Bar (0% ~ 100%) -->
+                <div class="w-full max-w-md h-7 sm:h-8 bg-slate-900/90 border-[3px] border-black rounded-full p-0.5 mb-2.5 relative overflow-hidden shadow-lg">
+                    <div id="climb-progress-fill" class="h-full bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 rounded-full transition-all duration-100" style="width: 0%;"></div>
+                    <span id="climb-progress-text" class="absolute inset-0 flex items-center justify-end pr-3 text-white text-sm sm:text-base stroke-text-sm">0%</span>
+                </div>
+
+                <!-- 3 Buttons Row: 2x Speed | SURF! | AFK Auto Play -->
+                <div class="flex items-center justify-center gap-2 sm:gap-3 w-full">
+                    <!-- 2x Speed Toggle (Free for user!) -->
+                    <button id="btn-2x-speed" class="roblox-btn flex-1 py-2.5 sm:py-3 px-2 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-red-500 text-white text-xs sm:text-base stroke-text-sm flex flex-col items-center">
+                        <span class="text-[10px] sm:text-xs text-yellow-200">⚡ 무료 부스트</span>
+                        <span id="txt-2x-speed">2배 속도 OFF</span>
+                    </button>
+
+                    <!-- Big Green SURF! Button -->
+                    <button id="btn-surf-now" class="roblox-btn flex-[1.4] py-3 sm:py-4 px-4 rounded-2xl bg-gradient-to-b from-lime-400 to-green-600 text-white text-xl sm:text-2xl stroke-text tracking-wider animate-pulse">
+                        서핑! 🌊
+                    </button>
+
+                    <!-- AFK Auto Play Toggle -->
+                    <button id="btn-afk-auto" class="roblox-btn flex-1 py-2.5 sm:py-3 px-2 rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white text-xs sm:text-base stroke-text-sm flex flex-col items-center">
+                        <span class="text-[10px] sm:text-xs text-cyan-200">🤖 자동 노가다</span>
+                        <span id="txt-afk-auto">AFK 자동 OFF</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Plaza Hint Banner (When walking in Plaza) -->
+            <div id="plaza-hint-banner" class="flex flex-col items-center justify-end mb-3 pointer-events-none text-center px-2">
+                <div class="bg-black/55 border-2 border-white/40 backdrop-blur-sm px-4 py-1.5 rounded-full text-white text-xs sm:text-sm stroke-text-sm">
+                    💡 앞쪽 <span class="text-cyan-300">파란 출발 풀장</span>으로 들어가면 슬라이드를 타고 올라갑니다!
+                </div>
+            </div>
+
+            <!-- Bottom-Right: Roblox Mobile Jump Button -->
+            <div id="jump-zone" class="relative mr-3 mb-2 pointer-events-auto">
+                <button id="btn-jump" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-slate-800/65 border-4 border-white/80 active:bg-slate-700/90 active:scale-95 flex items-center justify-center shadow-xl transition">
+                    <svg class="w-10 h-10 sm:w-12 sm:h-12 text-white fill-current" viewBox="0 0 24 24">
+                        <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= BOAT SHOP MODAL ================= -->
+    <div id="shop-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden items-center justify-center p-3 sm:p-6">
+        <div class="roblox-panel w-full max-w-3xl bg-slate-800 rounded-3xl overflow-hidden flex flex-col max-h-[88vh]">
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-amber-400 via-yellow-400 to-orange-400 px-5 py-3.5 border-b-4 border-black flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl sm:text-3xl">🚤</span>
+                    <h2 class="text-xl sm:text-3xl text-white stroke-text">보트 업그레이드 상점</h2>
+                </div>
+                <button id="btn-close-shop" class="roblox-btn w-10 h-10 rounded-xl bg-red-500 text-white text-xl stroke-text-sm flex items-center justify-center">✕</button>
+            </div>
+
+            <!-- Current Balance Bar inside Shop -->
+            <div class="bg-slate-900 px-5 py-2.5 border-b-2 border-black flex items-center justify-between text-sm sm:text-base">
+                <span class="text-slate-300">보유 코인으로 더 빠르고 돈이 많이 벌리는 보트를 구매하세요!</span>
+                <div class="flex items-center gap-1.5 bg-slate-800 px-3 py-1 rounded-xl border-2 border-black">
+                    <span>🪙</span>
+                    <span id="shop-coins-display" class="text-yellow-300 stroke-text-sm">0</span>
+                </div>
+            </div>
+
+            <!-- Boats List Grid -->
+            <div id="shop-boats-grid" class="p-4 sm:p-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <!-- Populated dynamically by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= SHARE / CHALLENGE MODAL ================= -->
+    <div id="share-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden items-center justify-center p-4">
+        <div class="roblox-panel w-full max-w-md bg-slate-800 rounded-3xl overflow-hidden flex flex-col">
+            <div class="bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-3.5 border-b-4 border-black flex items-center justify-between">
+                <h2 class="text-xl sm:text-2xl text-white stroke-text">📤 친구에게 기록 공유하기</h2>
+                <button id="btn-close-share" class="roblox-btn w-9 h-9 rounded-xl bg-red-500 text-white text-lg stroke-text-sm flex items-center justify-center">✕</button>
+            </div>
+            <div class="p-5 flex flex-col gap-4 text-white">
+                <div class="bg-slate-900/90 border-2 border-black rounded-2xl p-4 flex flex-col gap-2">
+                    <div class="text-amber-300 text-lg stroke-text-sm">🏆 나의 슬라이드 기록 카드</div>
+                    <div class="text-sm text-slate-200 space-y-1">
+                        <div>• 장착 보트: <span id="share-boat-name" class="text-cyan-300 font-bold">기본 튜브</span></div>
+                        <div>• 최고 도달 높이: <span id="share-best-height" class="text-lime-300 font-bold">0m</span></div>
+                        <div>• 보유 코인: <span id="share-coins" class="text-yellow-300 font-bold">0</span></div>
+                        <div>• 누적 트로피: <span id="share-trophies" class="text-amber-400 font-bold">0</span></div>
+                    </div>
+                </div>
+                <p class="text-xs sm:text-sm text-slate-300 text-center">아래 버튼을 누르면 내 기록과 게임 링크가 복사되어 카카오톡이나 디스코드로 친구들에게 바로 보낼 수 있습니다!</p>
+                <button id="btn-copy-share" class="roblox-btn w-full py-3 rounded-2xl bg-gradient-to-b from-lime-400 to-green-600 text-white text-lg stroke-text">
+                    📋 내 기록 & 초대 메시지 복사하기
+                </button>
+                <div id="copy-toast" class="hidden text-center text-lime-300 text-sm stroke-text-sm">✅ 클립보드에 복사되었습니다! 친구에게 붙여넣기 하세요!</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**************************************************************
+         * 1. GAME DATA & BOAT DEFINITIONS
+         **************************************************************/
+        const BOATS = [
+            {
+                id: 0,
+                name: "기본 노란 튜브",
+                price: 0,
+                coinMult: 1,
+                speedMult: 1.0,
+                maxDistRatio: 0.22, // Up to ~11KM on 50KM bar
+                badge: "기본 지급",
+                color: "#facc15",
+                icon: "🍩",
+                desc: "누구나 시작할 때 받는 귀여운 노란색 물놀이 튜브입니다."
+            },
+            {
+                id: 1,
+                name: "통나무 뗏목",
+                price: 300,
+                coinMult: 3,
+                speedMult: 1.25,
+                maxDistRatio: 0.38,
+                badge: "초보 추천",
+                color: "#b45309",
+                icon: "🪵",
+                desc: "튼튼한 통나무를 엮어 만든 뗏목입니다. 코인을 3배로 획득합니다!"
+            },
+            {
+                id: 2,
+                name: "레드 스피드 모터보트",
+                price: 2000,
+                coinMult: 10,
+                speedMult: 1.55,
+                maxDistRatio: 0.55,
+                badge: "인기",
+                color: "#ef4444",
+                icon: "🚤",
+                desc: "강력한 듀얼 엔진이 장착되어 급류를 빠르게 거슬러 올라갑니다."
+            },
+            {
+                id: 3,
+                name: "VIP 황금 야자수 보트",
+                price: 15000,
+                coinMult: 45,
+                speedMult: 1.9,
+                maxDistRatio: 0.75,
+                badge: "VIP 전용급",
+                color: "#eab308",
+                icon: "🌴",
+                desc: "스크린샷 속 바로 그 황금 야자수 보트! 엄청난 코인 보너스를 줍니다."
+            },
+            {
+                id: 4,
+                name: "네더 바다 몬스터",
+                price: 120000,
+                coinMult: 250,
+                speedMult: 2.35,
+                maxDistRatio: 0.92,
+                badge: "초희귀",
+                color: "#10b981",
+                icon: "🐉",
+                desc: "초록빛 네온 오라를 뿜어내는 심해 크라켄 몬스터 보트입니다."
+            },
+            {
+                id: 5,
+                name: "은하계 초음속 드래곤 요트",
+                price: 1000000,
+                coinMult: 1500,
+                speedMult: 3.0,
+                maxDistRatio: 1.0, // Reaches full 50KM top!
+                badge: "신화 등급",
+                color: "#a855f7",
+                icon: "🚀",
+                desc: "50KM 정상까지 단숨에 주파하는 전설의 최종 보트입니다!"
+            }
+        ];
+
+        // Player Persistent State
+        const state = {
+            coins: 0,
+            trophies: 0,
+            ownedBoats: [0],
+            equippedBoat: 0,
+            bestHeightMeters: 0,
+            soundEnabled: true,
+            boost2x: false,
+            afkAuto: false,
+            mode: 'PLAZA', // 'PLAZA' | 'CLIMBING' | 'SURFING'
+            climbProgress: 0, // 0.0 to 1.0
+            currentHeightMeters: 0,
+            pendingCoins: 0,
+            chosenLane: 0 // -1: Blue, 0: Pink, 1: Yellow
+        };
+
+        // Load saved progress if available
+        try {
+            let raw = '';
+            try { raw = localStorage.getItem('rapids-save') || ''; } catch (e) {}
+            if (!raw) raw = window.name || '';
+            const saved = JSON.parse(raw || '{}');
+            if (saved && typeof saved.coins === 'number') {
+                state.coins = saved.coins;
+                state.trophies = saved.trophies || 0;
+                state.ownedBoats = Array.isArray(saved.ownedBoats) ? saved.ownedBoats : [0];
+                state.equippedBoat = saved.equippedBoat || 0;
+                state.bestHeightMeters = saved.bestHeightMeters || 0;
+            }
+        } catch (e) {}
+
+        function saveState() {
+            const data = JSON.stringify({
+                coins: state.coins,
+                trophies: state.trophies,
+                ownedBoats: state.ownedBoats,
+                equippedBoat: state.equippedBoat,
+                bestHeightMeters: state.bestHeightMeters
+            });
+            try { localStorage.setItem('rapids-save', data); } catch (e) {}
+            try { window.name = data; } catch (e) {}
+        }
+
+        // Number Formatter (1.25K, 9.89M, 96.79B like Roblox)
+        function formatNumber(num) {
+            num = Math.floor(num);
+            if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+            if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+            if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+            return num.toString();
+        }
+
+        /**************************************************************
+         * 2. SYNTHESIZED SOUND EFFECTS (Web Audio API)
+         **************************************************************/
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) audioCtx = new AudioContext();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if (!state.soundEnabled) return;
+            initAudio();
+            if (!audioCtx) return;
+
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'jump') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(240, now);
+                osc.frequency.exponentialRampToValueAtTime(520, now + 0.16);
+                gain.gain.setValueAtTime(0.18, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.16);
+                osc.start(now);
+                osc.stop(now + 0.16);
+            } else if (type === 'surf') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(180, now + 0.45);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.45);
+                osc.start(now);
+                osc.stop(now + 0.45);
+            } else if (type === 'cashout') {
+                // Happy major arpeggio
+                const notes = [523.25, 659.25, 783.99, 1046.5];
+                notes.forEach((freq, idx) => {
+                    const o = audioCtx.createOscillator();
+                    const g = audioCtx.createGain();
+                    o.type = 'triangle';
+                    o.connect(g);
+                    g.connect(audioCtx.destination);
+                    o.frequency.setValueAtTime(freq, now + idx * 0.06);
+                    g.gain.setValueAtTime(0.22, now + idx * 0.06);
+                    g.gain.exponentialRampToValueAtTime(0.008, now + idx * 0.06 + 0.25);
+                    o.start(now + idx * 0.06);
+                    o.stop(now + idx * 0.06 + 0.25);
+                });
+            } else if (type === 'buy') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.setValueAtTime(880, now + 0.08);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            }
+        }
+
+        /**************************************************************
+         * 3. THREE.JS 3D SCENE & WORLD BUILDER
+         **************************************************************/
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        function viewSize() {
+            const r = canvas.getBoundingClientRect();
+            return {
+                w: Math.max(1, Math.round(r.width || window.innerWidth)),
+                h: Math.max(1, Math.round(r.height || window.innerHeight))
+            };
+        }
+        renderer.setSize(viewSize().w, viewSize().h, false);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x5ce1e6);
+        scene.fog = new THREE.FogExp2(0x5ce1e6, 0.0018);
+
+        const camera = new THREE.PerspectiveCamera(60, viewSize().w / viewSize().h, 0.5, 900);
+
+        // Lighting
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xfde68a, 0.75);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+        dirLight.position.set(60, 120, 80);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        dirLight.shadow.camera.near = 10;
+        dirLight.shadow.camera.far = 350;
+        const d = 90;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        scene.add(dirLight);
+
+        // Slide Ramp Geometry Constants
+        const SLIDE_START_Z = -24;
+        const SLIDE_LENGTH = 460;
+        const SLIDE_ANGLE = 0.42; // ~24 degrees steep incline
+
+        function getSlidePoint(distanceAlongSlide, laneIndex = 0) {
+            const laneX = laneIndex * 5.2; // -5.2 (Blue), 0 (Pink), +5.2 (Yellow)
+            const y = 0.4 + Math.sin(SLIDE_ANGLE) * distanceAlongSlide;
+            const z = SLIDE_START_Z - Math.cos(SLIDE_ANGLE) * distanceAlongSlide;
+            return new THREE.Vector3(laneX, y, z);
+        }
+
+        // Animated water stripe array
+        const waterFlowStripes = [];
+        const splashParticles = [];
+        const npcRiders = [];
+
+        function buildWorld() {
+            // 1. Main Plaza Ground (Warm Beige Sand/Stone like Screenshot 1 & 2)
+            const groundGeo = new THREE.BoxGeometry(150, 4, 120);
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0xe7cfa8 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.position.set(0, -2, 10);
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Cross Pathways in Plaza (Tan/Brown paths with dark border)
+            const pathBorderMat = new THREE.MeshLambertMaterial({ color: 0x6b533b });
+            const pathInnerMat = new THREE.MeshLambertMaterial({ color: 0xd5b887 });
+
+            const path1B = new THREE.Mesh(new THREE.BoxGeometry(11, 0.12, 66), pathBorderMat);
+            path1B.position.set(0, 0.02, 12);
+            scene.add(path1B);
+            const path1I = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.16, 65), pathInnerMat);
+            path1I.position.set(0, 0.04, 12);
+            scene.add(path1I);
+
+            const path2B = new THREE.Mesh(new THREE.BoxGeometry(72, 0.12, 11), pathBorderMat);
+            path2B.position.set(0, 0.02, 12);
+            scene.add(path2B);
+            const path2I = new THREE.Mesh(new THREE.BoxGeometry(71, 0.16, 9.6), pathInnerMat);
+            path2I.position.set(0, 0.04, 12);
+            scene.add(path2I);
+
+            // 2. Blue Circular Starting Pool at Base of Slide (출발 풀장)
+            const poolRimGeo = new THREE.CylinderGeometry(13.5, 14, 0.8, 36);
+            const poolRimMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
+            const poolRim = new THREE.Mesh(poolRimGeo, poolRimMat);
+            poolRim.position.set(0, 0.3, SLIDE_START_Z + 4);
+            scene.add(poolRim);
+
+            const poolWaterGeo = new THREE.CylinderGeometry(12.2, 12.2, 0.9, 36);
+            const poolWaterMat = new THREE.MeshBasicMaterial({ color: 0x00b4d8 });
+            const poolWater = new THREE.Mesh(poolWaterGeo, poolWaterMat);
+            poolWater.position.set(0, 0.38, SLIDE_START_Z + 4);
+            scene.add(poolWater);
+
+            // Glowing VIP Launch Circle right in front of the pink lane
+            const launchPadGeo = new THREE.CylinderGeometry(3.2, 3.2, 0.3, 24);
+            const launchPadMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+            const launchPad = new THREE.Mesh(launchPadGeo, launchPadMat);
+            launchPad.position.set(0, 0.78, SLIDE_START_Z + 5);
+            scene.add(launchPad);
+
+            // 3. Giant 3-Lane Slide Ramp (Blue, Pink, Yellow)
+            const rampGroup = new THREE.Group();
+            rampGroup.position.set(0, 0, SLIDE_START_Z);
+            rampGroup.rotation.x = SLIDE_ANGLE;
+            scene.add(rampGroup);
+
+            // Cobblestone Sidewalks on both sides of the slide
+            const roadGeo = new THREE.BoxGeometry(26, 1.2, SLIDE_LENGTH);
+            const roadMat = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
+            const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+            roadMesh.position.set(0, -0.4, -SLIDE_LENGTH / 2);
+            rampGroup.add(roadMesh);
+
+            // 3 Colored Lanes: Left (-5.2) Blue, Center (0) Pink, Right (+5.2) Yellow
+            const laneConfigs = [
+                { x: -5.2, color: 0x00a8ff, stripeColor: 0x90e0ef },
+                { x: 0,    color: 0xff2a85, stripeColor: 0xff9ebb },
+                { x: 5.2,  color: 0xffbe0b, stripeColor: 0xfef08a }
+            ];
+
+            laneConfigs.forEach((cfg, laneIdx) => {
+                const laneGeo = new THREE.BoxGeometry(4.8, 0.5, SLIDE_LENGTH);
+                const laneMat = new THREE.MeshBasicMaterial({ color: cfg.color });
+                const laneMesh = new THREE.Mesh(laneGeo, laneMat);
+                laneMesh.position.set(cfg.x, 0.25, -SLIDE_LENGTH / 2);
+                rampGroup.add(laneMesh);
+
+                // Side Rails
+                const railGeo = new THREE.BoxGeometry(0.45, 1.0, SLIDE_LENGTH);
+                const railMat = new THREE.MeshLambertMaterial({ color: cfg.color });
+                const leftRail = new THREE.Mesh(railGeo, railMat);
+                leftRail.position.set(cfg.x - 2.4, 0.5, -SLIDE_LENGTH / 2);
+                rampGroup.add(leftRail);
+                const rightRail = new THREE.Mesh(railGeo, railMat);
+                rightRail.position.set(cfg.x + 2.4, 0.5, -SLIDE_LENGTH / 2);
+                rampGroup.add(rightRail);
+
+                // Animated Water Flow Stripes along the lane
+                for (let i = 0; i < 36; i++) {
+                    const sGeo = new THREE.PlaneGeometry(2.6, 5.5);
+                    const sMat = new THREE.MeshBasicMaterial({
+                        color: cfg.stripeColor,
+                        transparent: true,
+                        opacity: 0.55,
+                        side: THREE.DoubleSide
+                    });
+                    const stripe = new THREE.Mesh(sGeo, sMat);
+                    stripe.rotation.x = -Math.PI / 2;
+                    stripe.position.set(cfg.x, 0.55, -i * (SLIDE_LENGTH / 36));
+                    rampGroup.add(stripe);
+                    waterFlowStripes.push({ mesh: stripe, dir: laneIdx === 0 ? 1 : -1 });
+                }
+            });
+
+            // 4. Colorful European Town Buildings Lining the Ramp & Plaza (Like Screenshots!)
+            const buildingColors = [0xd64545, 0x3b82f6, 0xf8fafc, 0xf59e0b, 0x10b981, 0xe11d48];
+            const roofColors = [0x991b1b, 0x1e293b, 0xb45309, 0x334155];
+
+            function createBuilding(x, y, z, w, h, d, bodyColor, roofColor) {
+                const bGroup = new THREE.Group();
+                bGroup.position.set(x, y, z);
+
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(w, h, d),
+                    new THREE.MeshLambertMaterial({ color: bodyColor })
+                );
+                body.position.y = h / 2;
+                body.castShadow = true;
+                body.receiveShadow = true;
+                bGroup.add(body);
+
+                // Pitched Roof
+                const roof = new THREE.Mesh(
+                    new THREE.ConeGeometry(Math.max(w, d) * 0.72, 6, 4),
+                    new THREE.MeshLambertMaterial({ color: roofColor })
+                );
+                roof.position.y = h + 3;
+                roof.rotation.y = Math.PI / 4;
+                bGroup.add(roof);
+
+                // White Windows on Front
+                const winMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe });
+                for (let wy = 4; wy < h - 3; wy += 5) {
+                    for (let wx = -w / 3; wx <= w / 3; wx += w / 3) {
+                        const win = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.4, d + 0.3), winMat);
+                        win.position.set(wx, wy, 0);
+                        bGroup.add(win);
+                    }
+                }
+                scene.add(bGroup);
+            }
+
+            // Buildings along the giant ramp
+            for (let i = 0; i < 16; i++) {
+                const dist = i * 26;
+                const pt = getSlidePoint(dist, 0);
+                const h = 22 + (i % 3) * 6;
+                const bCol1 = buildingColors[i % buildingColors.length];
+                const bCol2 = buildingColors[(i + 2) % buildingColors.length];
+                const rCol1 = roofColors[i % roofColors.length];
+                const rCol2 = roofColors[(i + 1) % roofColors.length];
+
+                createBuilding(-24, pt.y - 6, pt.z, 16, h, 16, bCol1, rCol1);
+                createBuilding(24, pt.y - 6, pt.z, 16, h, 16, bCol2, rCol2);
+            }
+
+            // Plaza Town Background Buildings
+            createBuilding(-42, 0, -10, 20, 26, 18, 0xd64545, 0x991b1b);
+            createBuilding(42, 0, -10, 20, 28, 18, 0xf8fafc, 0x334155);
+            createBuilding(-45, 0, 20, 18, 22, 18, 0x3b82f6, 0x1e293b);
+            createBuilding(45, 0, 20, 18, 24, 18, 0xf59e0b, 0x991b1b);
+
+            // 5. Shop Stall & Glowing Shop Ring on Left of Plaza (Matches Screenshot 1 "Shop")
+            const shopGroup = new THREE.Group();
+            shopGroup.position.set(-18, 0, -6);
+            scene.add(shopGroup);
+
+            const stallBase = new THREE.Mesh(
+                new THREE.BoxGeometry(8, 5, 6),
+                new THREE.MeshLambertMaterial({ color: 0xef4444 })
+            );
+            stallBase.position.y = 2.5;
+            stallBase.castShadow = true;
+            shopGroup.add(stallBase);
+
+            const stallRoof = new THREE.Mesh(
+                new THREE.BoxGeometry(9.2, 1.5, 7.2),
+                new THREE.MeshLambertMaterial({ color: 0xfef08a })
+            );
+            stallRoof.position.y = 5.6;
+            shopGroup.add(stallRoof);
+
+            // Glowing Cyan Shop Trigger Circle in front of Shop
+            const shopRing = new THREE.Mesh(
+                new THREE.CylinderGeometry(3.8, 3.8, 0.25, 28),
+                new THREE.MeshBasicMaterial({ color: 0x22d3ee })
+            );
+            shopRing.position.set(-14, 0.15, 2);
+            scene.add(shopRing);
+
+            // 6. Green Low-Poly Trees & Bushes around Plaza
+            const treePositions = [
+                [-26, 25], [26, 25], [-28, 8], [28, 8],
+                [22, -8], [30, -18], [-22, 34], [22, 34]
+            ];
+            treePositions.forEach(([tx, tz]) => {
+                const trunk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.7, 0.9, 4, 8),
+                    new THREE.MeshLambertMaterial({ color: 0x78350f })
+                );
+                trunk.position.set(tx, 2, tz);
+                scene.add(trunk);
+
+                const leaves = new THREE.Mesh(
+                    new THREE.SphereGeometry(3.5, 10, 10),
+                    new THREE.MeshLambertMaterial({ color: 0x4ade80 })
+                );
+                leaves.position.set(tx, 6, tz);
+                leaves.castShadow = true;
+                scene.add(leaves);
+            });
+        }
+
+        /**************************************************************
+         * 4. 3D BOAT MESH GENERATOR (6 Distinct Tiers)
+         **************************************************************/
+        function createBoatMesh(boatId) {
+            const group = new THREE.Group();
+
+            if (boatId === 0) {
+                // 0: Yellow Donut Tube
+                const torus = new THREE.Mesh(
+                    new THREE.TorusGeometry(1.5, 0.55, 12, 24),
+                    new THREE.MeshLambertMaterial({ color: 0xfacc15 })
+                );
+                torus.rotation.x = Math.PI / 2;
+                torus.position.y = 0.55;
+                group.add(torus);
+            } else if (boatId === 1) {
+                // 1: Wooden Log Raft
+                for (let i = -2; i <= 2; i++) {
+                    const log = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.36, 0.36, 4.4, 10),
+                        new THREE.MeshLambertMaterial({ color: 0x92400e })
+                    );
+                    log.rotation.x = Math.PI / 2;
+                    log.position.set(i * 0.72, 0.4, 0);
+                    group.add(log);
+                }
+            } else if (boatId === 2) {
+                // 2: Red Speedboat
+                const hull = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.8, 0.9, 5.0),
+                    new THREE.MeshLambertMaterial({ color: 0xef4444 })
+                );
+                hull.position.y = 0.55;
+                group.add(hull);
+
+                const stripe = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.9, 0.3, 5.1),
+                    new THREE.MeshBasicMaterial({ color: 0xffffff })
+                );
+                stripe.position.y = 0.65;
+                group.add(stripe);
+
+                const windshield = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.4, 0.7, 1.2),
+                    new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+                );
+                windshield.position.set(0, 1.2, -0.8);
+                group.add(windshield);
+            } else if (boatId === 3) {
+                // 3: VIP Golden Palm Boat (Just like Screenshot 1 & 2!)
+                const hull = new THREE.Mesh(
+                    new THREE.BoxGeometry(3.1, 1.0, 5.8),
+                    new THREE.MeshLambertMaterial({ color: 0xfacc15 })
+                );
+                hull.position.y = 0.6;
+                group.add(hull);
+
+                // Curved Prow
+                const prow = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.4, 1.5, 2.2, 12),
+                    new THREE.MeshLambertMaterial({ color: 0xeab308 })
+                );
+                prow.rotation.x = -Math.PI / 4;
+                prow.position.set(0, 1.5, -2.8);
+                group.add(prow);
+
+                // Palm Tree on Boat
+                const trunk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.22, 0.3, 3.6, 8),
+                    new THREE.MeshLambertMaterial({ color: 0x854d0e })
+                );
+                trunk.position.set(0, 2.4, 1.4);
+                group.add(trunk);
+
+                for (let a = 0; a < 5; a++) {
+                    const leaf = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.7, 0.15, 2.2),
+                        new THREE.MeshLambertMaterial({ color: 0x22c55e })
+                    );
+                    leaf.position.set(0, 4.2, 1.4);
+                    leaf.rotation.y = (a * Math.PI * 2) / 5;
+                    leaf.rotation.x = 0.35;
+                    group.add(leaf);
+                }
+            } else if (boatId === 4) {
+                // 4: Nether Sea Monster Boat (Black & Glowing Neon Green like Screenshot 1 bottom)
+                const hull = new THREE.Mesh(
+                    new THREE.BoxGeometry(3.3, 1.1, 6.4),
+                    new THREE.MeshLambertMaterial({ color: 0x0f172a })
+                );
+                hull.position.y = 0.65;
+                group.add(hull);
+
+                const neonTrim = new THREE.Mesh(
+                    new THREE.BoxGeometry(3.5, 0.35, 6.6),
+                    new THREE.MeshBasicMaterial({ color: 0x10b981 })
+                );
+                neonTrim.position.y = 0.65;
+                group.add(neonTrim);
+
+                // Glowing Spikes
+                for (let z = -2.2; z <= 2.2; z += 1.4) {
+                    const spike = new THREE.Mesh(
+                        new THREE.ConeGeometry(0.45, 1.4, 6),
+                        new THREE.MeshBasicMaterial({ color: 0x34d399 })
+                    );
+                    spike.position.set(1.5, 1.5, z);
+                    group.add(spike);
+                    const spikeL = spike.clone();
+                    spikeL.position.x = -1.5;
+                    group.add(spikeL);
+                }
+            } else {
+                // 5: Cosmic Supersonic Dragon Yacht
+                const hull = new THREE.Mesh(
+                    new THREE.BoxGeometry(3.6, 1.2, 6.8),
+                    new THREE.MeshLambertMaterial({ color: 0x7e22ce })
+                );
+                hull.position.y = 0.7;
+                group.add(hull);
+
+                const wing = new THREE.Mesh(
+                    new THREE.BoxGeometry(6.4, 0.25, 2.0),
+                    new THREE.MeshBasicMaterial({ color: 0x22d3ee })
+                );
+                wing.position.set(0, 1.1, 1.0);
+                group.add(wing);
+
+                const core = new THREE.Mesh(
+                    new THREE.OctahedronGeometry(0.9),
+                    new THREE.MeshBasicMaterial({ color: 0xf43f5e })
+                );
+                core.position.set(0, 2.1, -1.6);
+                group.add(core);
+            }
+
+            return group;
+        }
+
+        /**************************************************************
+         * 5. ROBLOX-STYLE BLOCKY CHARACTER & PLAYER CONTROLLER
+         **************************************************************/
+        const playerGroup = new THREE.Group();
+        playerGroup.position.set(0, 0, 16);
+        scene.add(playerGroup);
+
+        // Character Body Parts
+        const charGroup = new THREE.Group();
+        playerGroup.add(charGroup);
+
+        const headMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.1, 1.1, 1.1),
+            new THREE.MeshLambertMaterial({ color: 0xfde047 })
+        );
+        headMesh.position.y = 3.1;
+        headMesh.castShadow = true;
+        charGroup.add(headMesh);
+
+        // Crown/Hair on top
+        const hatMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.2, 0.35, 1.2),
+            new THREE.MeshLambertMaterial({ color: 0xef4444 })
+        );
+        hatMesh.position.y = 3.75;
+        charGroup.add(hatMesh);
+
+        const torsoMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.4, 1.5, 0.75),
+            new THREE.MeshLambertMaterial({ color: 0x2563eb })
+        );
+        torsoMesh.position.y = 1.85;
+        torsoMesh.castShadow = true;
+        charGroup.add(torsoMesh);
+
+        const leftLeg = new THREE.Mesh(
+            new THREE.BoxGeometry(0.6, 1.1, 0.7),
+            new THREE.MeshLambertMaterial({ color: 0x16a34a })
+        );
+        leftLeg.position.set(-0.38, 0.55, 0);
+        charGroup.add(leftLeg);
+
+        const rightLeg = new THREE.Mesh(
+            new THREE.BoxGeometry(0.6, 1.1, 0.7),
+            new THREE.MeshLambertMaterial({ color: 0x16a34a })
+        );
+        rightLeg.position.set(0.38, 0.55, 0);
+        charGroup.add(rightLeg);
+
+        const leftArm = new THREE.Mesh(
+            new THREE.BoxGeometry(0.5, 1.4, 0.6),
+            new THREE.MeshLambertMaterial({ color: 0xfde047 })
+        );
+        leftArm.position.set(-1.0, 1.85, 0);
+        charGroup.add(leftArm);
+
+        const rightArm = new THREE.Mesh(
+            new THREE.BoxGeometry(0.5, 1.4, 0.6),
+            new THREE.MeshLambertMaterial({ color: 0xfde047 })
+        );
+        rightArm.position.set(1.0, 1.85, 0);
+        charGroup.add(rightArm);
+
+        // Boat Container attached to Player
+        let currentBoatMesh = null;
+        function updateEquippedBoatMesh() {
+            if (currentBoatMesh) {
+                playerGroup.remove(currentBoatMesh);
+            }
+            currentBoatMesh = createBoatMesh(state.equippedBoat);
+            playerGroup.add(currentBoatMesh);
+            document.getElementById('hud-boat-name').textContent = BOATS[state.equippedBoat].name;
+        }
+
+        // Create Ambient NPC Boats riding the slide so the world feels alive
+        function createNPCRiders() {
+            const npcConfigs = [
+                { lane: -1, boatId: 2, speed: 42, dir: -1, dist: 180 },
+                { lane: 1,  boatId: 3, speed: 22, dir: 1,  dist: 70 },
+                { lane: 0,  boatId: 4, speed: 28, dir: 1,  dist: 240 }
+            ];
+            npcConfigs.forEach(cfg => {
+                const g = new THREE.Group();
+                const b = createBoatMesh(cfg.boatId);
+                g.add(b);
+                const dummyHead = new THREE.Mesh(
+                    new THREE.BoxGeometry(1, 1, 1),
+                    new THREE.MeshLambertMaterial({ color: 0xfacc15 })
+                );
+                dummyHead.position.y = 2.4;
+                g.add(dummyHead);
+                scene.add(g);
+                npcRiders.push({ group: g, ...cfg });
+            });
+        }
+
+        buildWorld();
+        updateEquippedBoatMesh();
+        createNPCRiders();
+
+        /**************************************************************
+         * 6. INPUT HANDLING: JOYSTICK, KEYBOARD, JUMP, CAMERA ORBIT
+         **************************************************************/
+        const input = {
+            joyX: 0,
+            joyY: 0,
+            keys: {},
+            camYaw: 0,
+            camPitch: 0.42
+        };
+
+        let playerVelY = 0;
+        let isGrounded = true;
+
+        // Keyboard Listeners
+        window.addEventListener('keydown', (e) => {
+            input.keys[e.code] = true;
+            if (e.code === 'Space') triggerJump();
+        });
+        window.addEventListener('keyup', (e) => {
+            input.keys[e.code] = false;
+        });
+
+        // Jump Action
+        function triggerJump() {
+            if (state.mode === 'PLAZA' && isGrounded) {
+                playerVelY = 16;
+                isGrounded = false;
+                playSound('jump');
+            }
+        }
+        document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            triggerJump();
+        });
+
+        // Virtual Joystick Touch/Mouse Logic
+        const joyZone = document.getElementById('joystick-zone');
+        const joyKnob = document.getElementById('joystick-knob');
+        let joyPointerId = null;
+        let joyCenter = { x: 0, y: 0 };
+        const maxJoyRadius = 42;
+
+        joyZone.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            initAudio();
+            joyPointerId = e.pointerId;
+            joyZone.setPointerCapture(e.pointerId);
+            const rect = joyZone.getBoundingClientRect();
+            joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+            updateJoystick(e.clientX, e.clientY);
+        });
+
+        joyZone.addEventListener('pointermove', (e) => {
+            if (e.pointerId === joyPointerId) {
+                updateJoystick(e.clientX, e.clientY);
+            }
+        });
+
+        const resetJoystick = (e) => {
+            if (e.pointerId === joyPointerId) {
+                joyPointerId = null;
+                input.joyX = 0;
+                input.joyY = 0;
+                joyKnob.style.transform = `translate(0px, 0px)`;
+            }
+        };
+        joyZone.addEventListener('pointerup', resetJoystick);
+        joyZone.addEventListener('pointercancel', resetJoystick);
+
+        function updateJoystick(clientX, clientY) {
+            let dx = clientX - joyCenter.x;
+            let dy = clientY - joyCenter.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > maxJoyRadius) {
+                dx = (dx / dist) * maxJoyRadius;
+                dy = (dy / dist) * maxJoyRadius;
+            }
+            joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            input.joyX = dx / maxJoyRadius;
+            input.joyY = dy / maxJoyRadius;
+        }
+
+        // Camera Orbit Drag on Canvas
+        let camPointerId = null;
+        let lastCamPos = { x: 0, y: 0 };
+
+        canvas.addEventListener('pointerdown', (e) => {
+            initAudio();
+            camPointerId = e.pointerId;
+            lastCamPos = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (e.pointerId === camPointerId) {
+                const dx = e.clientX - lastCamPos.x;
+                const dy = e.clientY - lastCamPos.y;
+                lastCamPos = { x: e.clientX, y: e.clientY };
+                input.camYaw -= dx * 0.006;
+                input.camPitch = Math.max(0.15, Math.min(1.15, input.camPitch + dy * 0.005));
+            }
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            if (e.pointerId === camPointerId) camPointerId = null;
+        });
+
+        /**************************************************************
+         * 7. CORE SLIDE CLIMBING & SURFING MECHANICS
+         **************************************************************/
+        const speedLinesContainer = document.getElementById('speed-lines');
+        // Generate radial speed lines for Surfing mode
+        for (let i = 0; i < 28; i++) {
+            const ray = document.createElement('div');
+            ray.className = 'speed-line-ray';
+            ray.style.setProperty('--angle', `${(i * 360) / 28}deg`);
+            speedLinesContainer.appendChild(ray);
+        }
+
+        function startClimbingSlide() {
+            if (state.mode !== 'PLAZA') return;
+            state.mode = 'CLIMBING';
+            state.climbProgress = 0;
+            state.currentHeightMeters = 0;
+            state.pendingCoins = 0;
+            // Climb up the center Pink lane (0) or Yellow lane (+1)
+            state.chosenLane = 0;
+            playSound('jump');
+
+            // Update UI visibility
+            document.getElementById('slide-controls-hud').classList.remove('hidden');
+            document.getElementById('slide-controls-hud').classList.add('flex');
+            document.getElementById('slide-earn-hud').classList.remove('hidden');
+            document.getElementById('slide-earn-hud').classList.add('flex');
+            document.getElementById('plaza-hint-banner').classList.add('hidden');
+            document.getElementById('joystick-zone').classList.add('opacity-40');
+
+            const boat = BOATS[state.equippedBoat];
+            document.getElementById('current-boat-bonus').textContent = `${boat.name} (배율 x${boat.coinMult})`;
+        }
+
+        function startSurfingDown() {
+            if (state.mode !== 'CLIMBING') return;
+            state.mode = 'SURFING';
+            // Switch to the left Blue water rush lane (-1) when surfing down, just like Screenshot 4!
+            state.chosenLane = -1;
+            playSound('surf');
+
+            speedLinesContainer.style.opacity = '1';
+        }
+
+        function finishSurfingAndReward() {
+            const earnedCoins = Math.max(15, Math.floor(state.pendingCoins));
+            const earnedTrophies = Math.max(1, Math.floor(state.currentHeightMeters / 2500) + 1);
+
+            state.coins += earnedCoins;
+            state.trophies += earnedTrophies;
+            if (state.currentHeightMeters > state.bestHeightMeters) {
+                state.bestHeightMeters = Math.floor(state.currentHeightMeters);
+            }
+            saveState();
+            updateTopHUD();
+
+            playSound('cashout');
+            spawnRewardPopup(`+${formatNumber(earnedCoins)} 코인! 🏆+${earnedTrophies}`);
+
+            speedLinesContainer.style.opacity = '0';
+
+            // If AFK Auto Play is ON, immediately start climbing again!
+            if (state.afkAuto) {
+                state.mode = 'PLAZA';
+                startClimbingSlide();
+                return;
+            }
+
+            // Return to Plaza right in front of the pool
+            state.mode = 'PLAZA';
+            state.climbProgress = 0;
+            state.currentHeightMeters = 0;
+            playerGroup.position.set(0, 0, -6);
+            playerGroup.rotation.set(0, 0, 0);
+            updateAltitudeUI(0);
+
+            document.getElementById('slide-controls-hud').classList.add('hidden');
+            document.getElementById('slide-controls-hud').classList.remove('flex');
+            document.getElementById('slide-earn-hud').classList.add('hidden');
+            document.getElementById('slide-earn-hud').classList.remove('flex');
+            document.getElementById('plaza-hint-banner').classList.remove('hidden');
+            document.getElementById('joystick-zone').classList.remove('opacity-40');
+        }
+
+        function spawnRewardPopup(text) {
+            const container = document.getElementById('popup-container');
+            const el = document.createElement('div');
+            el.className = 'coin-popup absolute left-1/2 top-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-400 to-yellow-500 border-4 border-black px-6 py-3 rounded-3xl text-white text-2xl sm:text-4xl stroke-text shadow-2xl whitespace-nowrap';
+            el.textContent = text;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 1350);
+        }
+
+        /**************************************************************
+         * 8. UI UPDATES & SHOP SYSTEM
+         **************************************************************/
+        function updateTopHUD() {
+            document.getElementById('ui-coins').textContent = formatNumber(state.coins);
+            document.getElementById('ui-trophies').textContent = formatNumber(state.trophies);
+            document.getElementById('shop-coins-display').textContent = formatNumber(state.coins);
+        }
+
+        function updateAltitudeUI(meters) {
+            const pct = Math.min(95, Math.max(0, (meters / 50000) * 95));
+            document.getElementById('player-altitude-marker').style.bottom = `${pct}%`;
+            document.getElementById('player-altitude-text').textContent =
+                meters >= 1000 ? `${(meters / 1000).toFixed(1)}KM` : `${Math.floor(meters)}m`;
+        }
+
+        function renderShop() {
+            const grid = document.getElementById('shop-boats-grid');
+            grid.innerHTML = '';
+            updateTopHUD();
+
+            BOATS.forEach((boat) => {
+                const isOwned = state.ownedBoats.includes(boat.id);
+                const isEquipped = state.equippedBoat === boat.id;
+                const canAfford = state.coins >= boat.price;
+
+                const card = document.createElement('div');
+                card.className = `roblox-panel rounded-2xl p-4 flex flex-col justify-between relative ${
+                    isEquipped ? 'ring-4 ring-lime-400 bg-slate-800' : 'bg-slate-900/90'
+                }`;
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-start justify-between gap-2 mb-2">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-12 h-12 rounded-2xl border-2 border-black flex items-center justify-center text-2xl shadow-md" style="background:${boat.color}">
+                                    ${boat.icon}
+                                </div>
+                                <div>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-amber-300 border border-amber-400/40">${boat.badge}</span>
+                                    <h3 class="text-lg text-white stroke-text-sm">${boat.name}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-xs text-slate-300 mb-3">${boat.desc}</p>
+                        <div class="grid grid-cols-2 gap-2 bg-black/40 p-2 rounded-xl border border-white/10 text-xs mb-3">
+                            <div class="text-yellow-300">🪙 코인 배율: <span class="font-bold">x${boat.coinMult}</span></div>
+                            <div class="text-cyan-300">⚡ 등반 속도: <span class="font-bold">x${boat.speedMult}</span></div>
+                        </div>
+                    </div>
+                    <button data-boat-id="${boat.id}" class="shop-action-btn roblox-btn w-full py-2.5 rounded-xl text-base stroke-text-sm ${
+                        isEquipped
+                            ? 'bg-lime-500 text-white'
+                            : isOwned
+                            ? 'bg-sky-500 text-white'
+                            : canAfford
+                            ? 'bg-gradient-to-b from-yellow-300 to-amber-500 text-white'
+                            : 'bg-slate-700 text-slate-400'
+                    }">
+                        ${
+                            isEquipped
+                                ? '✅ 장착 중'
+                                : isOwned
+                                ? '🚤 장착하기'
+                                : `🪙 ${formatNumber(boat.price)} 구매하기`
+                        }
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+
+            grid.querySelectorAll('.shop-action-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const id = parseInt(btn.getAttribute('data-boat-id'), 10);
+                    const boat = BOATS[id];
+                    if (state.ownedBoats.includes(id)) {
+                        state.equippedBoat = id;
+                        playSound('buy');
+                        updateEquippedBoatMesh();
+                        saveState();
+                        renderShop();
+                    } else if (state.coins >= boat.price) {
+                        state.coins -= boat.price;
+                        state.ownedBoats.push(id);
+                        state.equippedBoat = id;
+                        playSound('cashout');
+                        updateEquippedBoatMesh();
+                        saveState();
+                        renderShop();
+                        spawnRewardPopup(`🎉 ${boat.name} 장착 완료!`);
+                    } else {
+                        playSound('jump');
+                    }
+                });
+            });
+        }
+
+        // UI Button Bindings
+        const shopModal = document.getElementById('shop-modal');
+        document.getElementById('btn-open-shop').addEventListener('click', () => {
+            renderShop();
+            shopModal.classList.remove('hidden');
+            shopModal.classList.add('flex');
+        });
+        document.getElementById('btn-open-rank').addEventListener('click', () => {
+            renderShop();
+            shopModal.classList.remove('hidden');
+            shopModal.classList.add('flex');
+        });
+        document.getElementById('btn-close-shop').addEventListener('click', () => {
+            shopModal.classList.add('hidden');
+            shopModal.classList.remove('flex');
+        });
+
+        document.getElementById('btn-quick-slide').addEventListener('click', () => {
+            if (state.mode === 'PLAZA') {
+                startClimbingSlide();
+            }
+        });
+
+        document.getElementById('btn-surf-now').addEventListener('click', () => {
+            startSurfingDown();
+        });
+
+        // 2x Speed Toggle
+        document.getElementById('btn-2x-speed').addEventListener('click', () => {
+            state.boost2x = !state.boost2x;
+            document.getElementById('txt-2x-speed').textContent = state.boost2x ? '2배 속도 ON 🔥' : '2배 속도 OFF';
+            playSound('buy');
+        });
+
+        // AFK Auto Play Toggle
+        document.getElementById('btn-afk-auto').addEventListener('click', () => {
+            state.afkAuto = !state.afkAuto;
+            document.getElementById('txt-afk-auto').textContent = state.afkAuto ? 'AFK 자동 ON 🤖' : 'AFK 자동 OFF';
+            playSound('buy');
+        });
+
+        // Free Gift Button
+        let giftCooldown = 0;
+        document.getElementById('btn-free-gift').addEventListener('click', () => {
+            if (giftCooldown > 0) return;
+            const bonus = Math.max(250, Math.floor(BOATS[state.equippedBoat].coinMult * 180));
+            state.coins += bonus;
+            saveState();
+            updateTopHUD();
+            playSound('cashout');
+            spawnRewardPopup(`🎁 무료 선물 +${formatNumber(bonus)} 코인!`);
+            giftCooldown = 15;
+        });
+
+        setInterval(() => {
+            if (giftCooldown > 0) {
+                giftCooldown--;
+                document.getElementById('gift-timer-text').textContent = `${giftCooldown}초`;
+            } else {
+                document.getElementById('gift-timer-text').textContent = `무료 선물`;
+            }
+
+            // Animate Rival Bots on Left Altitude Bar
+            const b1 = 12 + Math.floor(Math.random() * 25);
+            const b2 = 40 + Math.floor(Math.random() * 35);
+            document.getElementById('bot-marker-1').style.bottom = `${b1}%`;
+            document.getElementById('bot-marker-2').style.bottom = `${b2}%`;
+        }, 1000);
+
+        // Sound Toggle & Reset Position
+        document.getElementById('btn-sound').addEventListener('click', () => {
+            state.soundEnabled = !state.soundEnabled;
+            document.getElementById('sound-icon').textContent = state.soundEnabled ? '🔊' : '🔇';
+        });
+
+        document.getElementById('btn-reset-pos').addEventListener('click', () => {
+            state.afkAuto = false;
+            document.getElementById('txt-afk-auto').textContent = 'AFK 자동 OFF';
+            if (state.mode !== 'PLAZA') {
+                finishSurfingAndReward();
+            } else {
+                playerGroup.position.set(0, 0, 16);
+            }
+        });
+
+        // Share Modal Logic
+        const shareModal = document.getElementById('share-modal');
+        document.getElementById('btn-share').addEventListener('click', () => {
+            document.getElementById('share-boat-name').textContent = BOATS[state.equippedBoat].name;
+            document.getElementById('share-best-height').textContent =
+                state.bestHeightMeters >= 1000
+                    ? `${(state.bestHeightMeters / 1000).toFixed(2)}KM`
+                    : `${state.bestHeightMeters}m`;
+            document.getElementById('share-coins').textContent = formatNumber(state.coins);
+            document.getElementById('share-trophies').textContent = formatNumber(state.trophies);
+            document.getElementById('copy-toast').classList.add('hidden');
+            shareModal.classList.remove('hidden');
+            shareModal.classList.add('flex');
+        });
+        document.getElementById('btn-close-share').addEventListener('click', () => {
+            shareModal.classList.add('hidden');
+            shareModal.classList.remove('flex');
+        });
+        document.getElementById('btn-copy-share').addEventListener('click', () => {
+            const shareText = `[🌊 급류 타기! 3D 보트 슬라이드 시뮬레이터]\n🚤 내 보트: ${BOATS[state.equippedBoat].name}\n🏔️ 최고 기록: ${state.bestHeightMeters}m\n🪙 보유 코인: ${formatNumber(state.coins)} | 🏆 트로피: ${formatNumber(state.trophies)}\n나보다 높이 올라갈 수 있어? 지금 바로 도전해봐!\n${location.href.split('#')[0]}`;
+            const done = () => {
+                document.getElementById('copy-toast').classList.remove('hidden');
+                playSound('cashout');
+            };
+            const fallback = () => {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = shareText;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(tempInput);
+                done();
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(shareText).then(done, fallback);
+            } else {
+                fallback();
+            }
+        });
+
+        /**************************************************************
+         * 9. MAIN ANIMATION & PHYSICS LOOP
+         **************************************************************/
+        const clock = new THREE.Clock();
+        let walkSwingTime = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.1);
+
+            // 1. Animate Flowing Water Stripes on the 3-Lane Slide
+            waterFlowStripes.forEach((item) => {
+                item.mesh.position.z += item.dir * 38 * dt;
+                if (item.mesh.position.z > 0) item.mesh.position.z = -SLIDE_LENGTH;
+                if (item.mesh.position.z < -SLIDE_LENGTH) item.mesh.position.z = 0;
+            });
+
+            // 2. Animate Ambient NPC Boats on the Slide
+            npcRiders.forEach((npc) => {
+                npc.dist += npc.dir * npc.speed * dt;
+                if (npc.dist > SLIDE_LENGTH - 20) npc.dir = -1;
+                if (npc.dist < 15) npc.dir = 1;
+                const pt = getSlidePoint(npc.dist, npc.lane);
+                npc.group.position.copy(pt);
+                npc.group.rotation.x = npc.dir > 0 ? SLIDE_ANGLE : -SLIDE_ANGLE;
+                npc.group.rotation.y = npc.dir > 0 ? 0 : Math.PI;
+            });
+
+            const equippedBoatData = BOATS[state.equippedBoat];
+
+            // 3. Handle Game Modes
+            if (state.mode === 'PLAZA') {
+                // Combine Joystick + Keyboard WASD
+                let moveX = input.joyX;
+                let moveZ = input.joyY;
+                if (input.keys['KeyW'] || input.keys['ArrowUp']) moveZ -= 1;
+                if (input.keys['KeyS'] || input.keys['ArrowDown']) moveZ += 1;
+                if (input.keys['KeyA'] || input.keys['ArrowLeft']) moveX -= 1;
+                if (input.keys['KeyD'] || input.keys['ArrowRight']) moveX += 1;
+
+                const len = Math.hypot(moveX, moveZ);
+                if (len > 1) {
+                    moveX /= len;
+                    moveZ /= len;
+                }
+
+                const moveSpeed = 18 * (1 + (equippedBoatData.speedMult - 1) * 0.25);
+
+                if (len > 0.05) {
+                    // Move relative to camera yaw
+                    const angle = Math.atan2(moveX, moveZ) + input.camYaw;
+                    playerGroup.position.x += Math.sin(angle) * moveSpeed * len * dt;
+                    playerGroup.position.z += Math.cos(angle) * moveSpeed * len * dt;
+                    playerGroup.rotation.y = angle + Math.PI;
+
+                    // Swing character limbs while walking
+                    walkSwingTime += dt * 12;
+                    leftLeg.rotation.x = Math.sin(walkSwingTime) * 0.6;
+                    rightLeg.rotation.x = -Math.sin(walkSwingTime) * 0.6;
+                    leftArm.rotation.x = -Math.sin(walkSwingTime) * 0.5;
+                    rightArm.rotation.x = Math.sin(walkSwingTime) * 0.5;
+                } else {
+                    leftLeg.rotation.x = 0;
+                    rightLeg.rotation.x = 0;
+                    leftArm.rotation.x = 0;
+                    rightArm.rotation.x = 0;
+                }
+
+                // Jump & Gravity in Plaza
+                playerGroup.position.y += playerVelY * dt;
+                if (!isGrounded) {
+                    playerVelY -= 42 * dt;
+                    if (playerGroup.position.y <= 0) {
+                        playerGroup.position.y = 0;
+                        playerVelY = 0;
+                        isGrounded = true;
+                    }
+                }
+
+                // Clamp Plaza Boundaries
+                playerGroup.position.x = Math.max(-35, Math.min(35, playerGroup.position.x));
+                playerGroup.position.z = Math.max(-22, Math.min(42, playerGroup.position.z));
+
+                // Check if Player Walked into the Blue Starting Pool -> Start Climbing!
+                const distToPool = Math.hypot(playerGroup.position.x - 0, playerGroup.position.z - (SLIDE_START_Z + 4));
+                if (distToPool < 11.5) {
+                    startClimbingSlide();
+                }
+
+                // Check if Player Walked onto the Cyan Shop Ring -> Open Boat Shop!
+                const distToShop = Math.hypot(playerGroup.position.x - (-14), playerGroup.position.z - 2);
+                if (distToShop < 3.6 && shopModal.classList.contains('hidden')) {
+                    // Gently nudge player outside ring so closing modal doesn't immediately re-trigger
+                    playerGroup.position.x = -9.5;
+                    renderShop();
+                    shopModal.classList.remove('hidden');
+                    shopModal.classList.add('flex');
+                }
+
+                // Smooth Third-Person Camera in Plaza
+                const camDist = 20;
+                const targetCamX = playerGroup.position.x + Math.sin(input.camYaw) * camDist * Math.cos(input.camPitch);
+                const targetCamY = playerGroup.position.y + Math.sin(input.camPitch) * camDist + 4;
+                const targetCamZ = playerGroup.position.z + Math.cos(input.camYaw) * camDist * Math.cos(input.camPitch);
+                camera.position.lerp(new THREE.Vector3(targetCamX, targetCamY, targetCamZ), 0.15);
+                camera.lookAt(playerGroup.position.x, playerGroup.position.y + 3, playerGroup.position.z - 4);
+
+            } else if (state.mode === 'CLIMBING') {
+                // Ascending the Pink Slide Lane!
+                const speedFactor = (state.boost2x ? 2.0 : 1.0) * equippedBoatData.speedMult;
+                state.climbProgress += dt * 0.11 * speedFactor;
+
+                if (state.climbProgress >= 1.0) {
+                    state.climbProgress = 1.0;
+                    // Auto surf when reaching 100% if AFK is on
+                    if (state.afkAuto) {
+                        startSurfingDown();
+                    }
+                }
+
+                const maxSlideWorldDist = (SLIDE_LENGTH - 25) * equippedBoatData.maxDistRatio;
+                const currentSlideDist = state.climbProgress * maxSlideWorldDist;
+                const slidePt = getSlidePoint(currentSlideDist, state.chosenLane);
+
+                playerGroup.position.copy(slidePt);
+                playerGroup.rotation.set(SLIDE_ANGLE, 0, 0);
+
+                // Calculate Altitude (0M to 50,000M) & Pending Coins
+                state.currentHeightMeters = (currentSlideDist / (SLIDE_LENGTH - 25)) * 50000;
+                state.pendingCoins += dt * 28 * equippedBoatData.coinMult * speedFactor * (1 + state.climbProgress * 2.5);
+
+                // Update Slide HUD
+                const pctInt = Math.floor(state.climbProgress * 100);
+                document.getElementById('climb-progress-fill').style.width = `${pctInt}%`;
+                document.getElementById('climb-progress-text').textContent = `${pctInt}%`;
+                document.getElementById('pending-coins-text').textContent = `+${formatNumber(state.pendingCoins)}`;
+                updateAltitudeUI(state.currentHeightMeters);
+
+                // High-angle camera looking down the colorful lanes (Matches Screenshot 3!)
+                const desiredCamPos = new THREE.Vector3(
+                    playerGroup.position.x,
+                    playerGroup.position.y + 18,
+                    playerGroup.position.z + 22
+                );
+                camera.position.lerp(desiredCamPos, 0.12);
+                camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1, playerGroup.position.z - 6);
+
+            } else if (state.mode === 'SURFING') {
+                // Zooming rapidly down the Blue Water Lane! (Matches Screenshot 4!)
+                const surfSpeed = 0.55 * (state.boost2x ? 1.5 : 1.0);
+                state.climbProgress -= dt * surfSpeed;
+
+                // Bonus coins while surfing down
+                state.pendingCoins += dt * 45 * equippedBoatData.coinMult;
+                document.getElementById('pending-coins-text').textContent = `+${formatNumber(state.pendingCoins)}`;
+
+                if (state.climbProgress <= 0) {
+                    state.climbProgress = 0;
+                    finishSurfingAndReward();
+                } else {
+                    const maxSlideWorldDist = (SLIDE_LENGTH - 25) * equippedBoatData.maxDistRatio;
+                    const currentSlideDist = state.climbProgress * maxSlideWorldDist;
+                    const slidePt = getSlidePoint(currentSlideDist, state.chosenLane);
+
+                    playerGroup.position.copy(slidePt);
+                    // Face downward along the ramp
+                    playerGroup.rotation.set(-SLIDE_ANGLE, Math.PI, 0);
+
+                    state.currentHeightMeters = (currentSlideDist / (SLIDE_LENGTH - 25)) * 50000;
+                    const pctInt = Math.floor(state.climbProgress * 100);
+                    document.getElementById('climb-progress-fill').style.width = `${pctInt}%`;
+                    document.getElementById('climb-progress-text').textContent = `${pctInt}%`;
+                    updateAltitudeUI(state.currentHeightMeters);
+
+                    // Dynamic overhead chase camera
+                    const desiredCamPos = new THREE.Vector3(
+                        playerGroup.position.x + 2,
+                        playerGroup.position.y + 20,
+                        playerGroup.position.z + 18
+                    );
+                    camera.position.lerp(desiredCamPos, 0.2);
+                    camera.lookAt(playerGroup.position.x, playerGroup.position.y - 2, playerGroup.position.z + 4);
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Responsive Canvas Resize
+        function applyResize() {
+            const v = viewSize();
+            camera.aspect = v.w / v.h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(v.w, v.h, false);
+        }
+        window.addEventListener('resize', applyResize);
+        if (window.ResizeObserver) new ResizeObserver(applyResize).observe(canvas);
+
+        window.onload = function () {
+            updateTopHUD();
+            animate();
+        };
+    </script>
+
+</body>
+</html>
